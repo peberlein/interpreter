@@ -668,6 +668,9 @@ function compile_jmp_expr(sequence e, integer d)
     -- compare it to zero
     if op = NOT then
       e = e[2]
+      op = JNE
+    else
+      op = JE
     end if
     ra = compile_expr(e, ALLOC_REG)
     free_temporary_reg(ra[1])
@@ -675,11 +678,7 @@ function compile_jmp_expr(sequence e, integer d)
     if d < 0 then
       d -= length(ra[2]) + 1
     end if
-    if op = NOT then
-      bc &= asm(JNE, ra[1], 0, d)
-    else
-      bc &= asm(JE, ra[1], 0, d)
-    end if
+    bc &= asm(op, ra[1], 0, d)
 
   end if
   return bc

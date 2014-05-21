@@ -39,7 +39,13 @@ enum {
 
 unsigned int *base = NULL;
 
-int next(unsigned int *bc, int regs[])
+//#define TRACE
+#ifndef TRACE
+
+#define trace(bc,regs) do{}while(0)
+
+#else
+int trace(unsigned int *bc, int regs[])
 {
     int i = *bc;
     int a = (i >> 8) & 0xff;
@@ -109,6 +115,7 @@ int next(unsigned int *bc, int regs[])
     }
     return i & 0xff;
 }
+#endif
 
 //#define INTO asm("jno .+4\n int $4\n" ::: "cc", "memory")
 #define INTO
@@ -151,8 +158,12 @@ static void interpret(unsigned int *bc)
 #define C ((k & 0xff00) >> 8)
 #define D (k)
 
+#define RA regs[A]
+#define RB regs[B]
+#define RC regs[C]
+
 #define NEXT do { \
-    /*next(bc, regs);*/ \
+    trace(bc, regs); \
     i = *bc++; \
     op = jt[i&0xff]; \
     j = (i & 0xff00) >> 8; \
@@ -166,14 +177,10 @@ static void interpret(unsigned int *bc)
     x = (expr); \
     k = i >> 16; \
     RA = x; \
-    /*next(bc-1, regs);*/ \
+    trace(bc-1, regs); \
     j = (i & 0xff00) >> 8; \
     goto *op; \
     } while (0)
-
-#define RA regs[A]
-#define RB regs[B]
-#define RC regs[C]
 
     regs[0] = 0; // r0 is always zero
     NEXT;
@@ -234,43 +241,52 @@ op_end:
     return;
 }
 
-
-int main(int argc, char *argv[])
+unsigned int *read_bytecode(FILE *f)
 {
+    unsigned int len = 0, size = 0;
     unsigned int *bc = NULL;
-    unsigned int bc_len = 0, bc_size = 0;
-    FILE *f = stdin;
     
-    if (argc > 1) {
-        f = fopen(argv[1], "r");
-        if (!f) {
-            perror(argv[1]);
-            exit(1);
-        }
-    }
     while (!feof(f)) {
         char line[256];
         if (!fgets(line, sizeof line, f))
             break;
-        printf("%s\n", line);
-        if (bc_len >= bc_size) {
-            bc_size += 1024;
-            bc = realloc(bc, bc_size * sizeof(*bc));
+        //printf("%s", line);
+        if (len >= size) {
+            size += 1024;
+            bc = realloc(bc, size * sizeof(*bc));
             if (!bc) {
                 fputs("out of memory\n", stderr);
                 exit(1);
             }
         }
-        bc[bc_len++] = strtol(line, NULL, 16);
+        bc[len++] = strtol(line, NULL, 16);
     }
-    if (f != stdin) {
+    return bc;    
+}
+
+
+int main(int argc, char *argv[])
+{
+    unsigned int *bc = NULL;
+    
+    if (argc > 1) {
+        FILE *f;
+        f = fopen(argv[1], "r");
+        if (!f) {
+            perror(argv[1]);
+            exit(1);
+        }
+        bc = read_bytecode(f);
         fclose(f);
+    } else {
+        bc = read_bytecode(stdin);
     }
     
-    base = bc;
-    interpret(bc);
-    
-    free(bc);
+    if (bc) {
+        base = bc;
+        interpret(bc);
+        free(bc);
+    }
 
     return 0;
 }
