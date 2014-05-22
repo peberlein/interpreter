@@ -110,7 +110,7 @@ int trace(unsigned int *bc, int regs[])
 
         default:
             printf("invalid opcode %d\n", i & 0xff);
-            abort();
+            exit(1);
             break;
     }
     return i & 0xff;
@@ -267,8 +267,9 @@ unsigned int *read_bytecode(FILE *f)
                 fputs("out of memory\n", stderr);
                 exit(1);
             }
+            base = bc;
         }
-        bc[len++] = strtol(line, NULL, 16);
+        bc[len++] = strtoul(line, NULL, 16);
     }
     return bc;    
 }
@@ -292,7 +293,6 @@ int main(int argc, char *argv[])
     }
     
     if (bc) {
-        base = bc;
         interpret(bc);
         free(bc);
     }
