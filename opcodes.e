@@ -20,9 +20,10 @@ global constant
   LTE = 18,
   GT = 19,
   QPRINT = 20,
-  NOT = 21,
-  SUB = 22,
-  NEG = 23,
-  AND = 24,
-  OR = 25,
-  XOR = 26
+  SUB = 21,
+  SUBU8 = 22,
+  NOT = 23,
+  NEG = 24,
+  AND = 25,
+  OR = 26,
+  XOR = 27

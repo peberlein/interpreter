@@ -144,7 +144,10 @@ static void interpret(unsigned int *bc)
         &&op_lte,
         &&op_gt,
         &&op_qprint,
+        &&op_sub,
+        &&op_subu8,
         &&op_not,
+        &&op_neg,
     };
     int regs[256];
 
@@ -194,7 +197,7 @@ op_mov:
 op_add:
     NEXTA(RB + RC);
 op_addu8:
-    NEXTA(RB + (char)C);
+    NEXTA(RB + (unsigned char)C);
 op_mul:
     NEXTA(RB * RC);
 op_div:
@@ -235,8 +238,14 @@ op_gt:
 op_qprint:
     printf("%d\n", RA);
     NEXT;
+op_sub:
+    NEXTA(RB - RC);
+op_subu8:
+    NEXTA(RB - (unsigned char)C);
 op_not:
     NEXTA(!RB);
+op_neg:
+    NEXTA(-RB);
 op_end:
     return;
 }

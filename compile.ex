@@ -80,7 +80,7 @@ procedure error(sequence msg)
 end procedure
 
 
--- ast node types
+-- ast node types that are not opcodes
 constant
   VAR_DECL = 256,
   ASSIGN = 257,
@@ -162,7 +162,9 @@ tok = ""
 function token(sequence try)
   if length(tok) = 0 then
     skip_whitespace()
-    if idx > length(file) then return 0 end if
+    if idx > length(file) then
+      return equal(tok,try)
+    end if
     tok_idx = idx
     tok = {file[idx]}
     idx += 1
@@ -197,7 +199,9 @@ end procedure
 
 function identifier()
   if length(tok) = 0 then
-    if token("") then end if
+    if token("") then
+      return 0
+    end if
   end if
   return isalpha(tok[1])
 end function
@@ -323,6 +327,10 @@ function expr(integer depth)
       e = {INTEGER, to_integer(get_token())}
     elsif token("-") then
       e = {NEG, expr(depth)}
+      if e[2][1] = INTEGER then
+        e = e[2]
+        e[2] = -e[2]
+      end if
     elsif token("+") then
       e = expr(depth)
     elsif token("not") then
@@ -443,7 +451,9 @@ function parse(integer mode)
       end if
     end if
     --? s
-    ast = append(ast, s)
+    if length(s) then
+      ast = append(ast, s)
+    end if
   end while
   return ast
 end function
@@ -477,7 +487,7 @@ end procedure
 -- in which case we need to free it when we're done
 -- (registers allocated to a variable will not be freed)
 procedure free_temporary_reg(integer r)
-  if integer(regs[r]) then
+  if r and integer(regs[r]) then
     regs[r] = 0
   end if
 end procedure
@@ -499,6 +509,9 @@ function compile_expr(sequence e, integer a)
     end if
     -- find a temporary reg
     a = find(0, regs)
+    if a = 0 then
+      error("not enough registers, sorry!")
+    end if
     regs[a] = -1
     return {a, compile_expr(e, a)}
   end if
@@ -520,15 +533,19 @@ function compile_expr(sequence e, integer a)
         asm2(LOADHI, a, floor(e[2] / #10000))
     end if
 
-  elsif op = ADD then
+  elsif op = ADD or op = SUB then
     if e[2][1] = INTEGER and e[2][2] >= 0 and e[2][2] <= 255 then
       r2 = compile_expr(e[3], ALLOC_REG)
       free_temporary_reg(r2[1])
-      return r2[2] & asm(ADDU8, a, r2[1], e[2][2])
+      return r2[2] & asm(op+1, a, r2[1], e[2][2])
     elsif e[3][1] = INTEGER and e[3][2] >= 0 and e[3][2] <= 255 then
       r1 = compile_expr(e[2], ALLOC_REG)
       free_temporary_reg(r1[1])
-      return r1[2] & asm(ADDU8, a, r1[1], e[3][2])
+      return r1[2] & asm(op+1, a, r1[1], e[3][2])
+    elsif e[3][1] = INTEGER and e[3][2] < 0 and e[3][2] >= -255 then
+      r1 = compile_expr(e[2], ALLOC_REG)
+      free_temporary_reg(r1[1])
+      return r1[2] & asm(ADD+SUB-op+1, a, r1[1], -e[3][2])
     end if
     r1 = compile_expr(e[2], ALLOC_REG)
     r2 = compile_expr(e[3], ALLOC_REG)
@@ -560,11 +577,21 @@ function compile_expr(sequence e, integer a)
       free_temporary_reg(r2[1])
       return r1[2] & r2[2] & asm(DIV, a, r1[1], r2[1])
 
+    elsif equal(e[2], "remainder") then
+      r1 = compile_expr(e[3], ALLOC_REG)
+      r2 = compile_expr(e[4], ALLOC_REG)
+      free_temporary_reg(r1[1])
+      free_temporary_reg(r2[1])
+      return r1[2] & r2[2] & asm(REM, a, r1[1], r2[1])
+
     else
-      puts(2, "floor not implemented\n")
+      printf(2, "func %s not implemented\n", {e[2]})
+      ? e
+      abort(1)
     end if
   else
-    printf(2, "expr %d %s\n", {e[1], ast_names[e[1]]})
+    printf(2, "expr %d %s not implemented\n", {e[1], ast_names[e[1]]})
+    abort(1)
   end if
 
   return {}
@@ -589,13 +616,12 @@ function de_morgans_laws(sequence e)
       e = e[2]
       -- swap EQ with NEQ, LT with GTE, GT with LTE
       e[1] = xor_bits(e[1], 1)
-      ? e
     end if
   end if
   return e
 end function
 
--- compile expression e: 
+-- compile jump expression e:
 -- when TRUE, fall thru  (common idiom for while/if/elsif)
 -- when FALSE, jump by d instructions
 function compile_jmp_expr(sequence e, integer d)
@@ -642,9 +668,10 @@ function compile_jmp_expr(sequence e, integer d)
     -- jmp if e[3] is false
     rb = compile_jmp_expr(e[3], d)
     ra = compile_jmp_expr({NOT, e[2]}, length(rb))
-    -- FIXME this adjustment won't work
     if d < 0 then
-      rb[$] -= length(ra) * #1000000
+      d -= length(ra)
+      rb = compile_jmp_expr(e[3], d)
+    else
     end if
     bc &= ra
     bc &= rb
@@ -690,7 +717,6 @@ function compile(sequence ast)
   integer reg
   
   bc = {}
-
   for i = 1 to length(ast) do
     s = ast[i]
     if s[1] = VAR_DECL then
@@ -741,8 +767,8 @@ function compile(sequence ast)
       bc &= st[2] & asm(QPRINT, st[1], 0, 0)
 
     else
-      printf(2, "stmt %d %s\n", {s[1], ast_names[s[1]]})
-
+      printf(2, "stmt %d %s not implemented\n", {s[1], ast_names[s[1]]})
+      abort(1)
     end if
 
   end for
@@ -751,16 +777,19 @@ function compile(sequence ast)
 end function
 
 procedure disasm(sequence bc)
-  integer op, a, b, c, d
+  integer op, a, b, c, d, sc, sd
   for i = 1 to length(bc) do
     op = and_bits(bc[i], #FF)
     a = and_bits(floor(bc[i] / #100), #FF)
     b = and_bits(floor(bc[i] / #10000), #FF)
     c = and_bits(floor(bc[i] / #1000000), #FF)
     d = and_bits(floor(bc[i] / #10000), #FFFF)
-    printf(1, "%08x\t", {bc[i]})
+    sc = c - 2 * and_bits(c, #80)
+    sd = d - 2 * and_bits(d, #8000)
+
+    printf(1, "%08x\t%d: ", {bc[i], i-1})
     if op = LOAD then
-      printf(1, "load   r%d, %d\n", {a, d - 2 * and_bits(d, #8000)})
+      printf(1, "load   r%d, %d\n", {a, sd})
     elsif op = LOADHI then
       printf(1, "loadhi r%d, %d\n", {a, d})
     elsif op = MOV then
@@ -768,7 +797,7 @@ procedure disasm(sequence bc)
     elsif op = ADD then
       printf(1, "add    r%d, r%d, r%d\n", {a, b, c})
     elsif op = ADDU8 then
-      printf(1, "add    r%d, r%d, %d\n", {a, b, c})
+      printf(1, "addu8  r%d, r%d, %d\n", {a, b, c})
     elsif op = MUL then
       printf(1, "mul    r%d, r%d, r%d\n", {a, b, c})
     elsif op = DIV then
@@ -776,27 +805,43 @@ procedure disasm(sequence bc)
     elsif op = REM then
       printf(1, "rem    r%d, r%d, r%d\n", {a, b, c})
     elsif op = JL then
-      printf(1, "jl     r%d, r%d, %d\n", {a, b, c - 2 * and_bits(c, #80)})
+      printf(1, "jl     r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
     elsif op = JLE then
-      printf(1, "jle    r%d, r%d, %d\n", {a, b, c - 2 * and_bits(c, #80)})
+      printf(1, "jle    r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
     elsif op = JE then
-      printf(1, "je     r%d, r%d, %d\n", {a, b, c - 2 * and_bits(c, #80)})
+      printf(1, "je     r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
     elsif op = JNE then
-      printf(1, "jne    r%d, r%d, %d\n", {a, b, c - 2 * and_bits(c, #80)})
+      printf(1, "jne    r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
     elsif op = JMP then
-      printf(1, "jmp    %d\n", {d - 2 * and_bits(d, #8000)})
+      printf(1, "jmp    %d (%d)\n", {sd, sd+i})
     elsif op = EQ then
       printf(1, "eq     r%d, r%d, r%d\n", {a, b, c})
     elsif op = NEQ then
       printf(1, "neq    r%d, r%d, r%d\n", {a, b, c})
+    elsif op = LT then
+      printf(1, "lt     r%d, r%d, r%d\n", {a, b, c})
+    elsif op = LTE then
+      printf(1, "lte    r%d, r%d, r%d\n", {a, b, c})
+    elsif op = GT then
+      printf(1, "gt     r%d, r%d, r%d\n", {a, b, c})
+    elsif op = GTE then
+      printf(1, "gte    r%d, r%d, r%d\n", {a, b, c})
     elsif op = REM then
       printf(1, "neq    r%d, r%d, r%d\n", {a, b, c})
     elsif op = QPRINT then
       printf(1, "qprint r%d\n", {a})
+    elsif op = SUB then
+      printf(1, "sub    r%d, r%d, r%d\n", {a, b, c})
+    elsif op = SUBU8 then
+      printf(1, "subu8  r%d, r%d, %d\n", {a, b, c})
+    elsif op = NOT then
+      printf(1, "not    r%d, r%d, %d\n", {a, b, c})
+    elsif op = NEG then
+      printf(1, "neg    r%d, r%d, %d\n", {a, b, c})
     elsif op = END then
       printf(1, "end    \n", {})
     else
-      printf(1, "op#%x  r%d, r%d, r%d\n", {op, a, b, c})
+      printf(1, "op %d  r%d, r%d, r%d\n", {op, a, b, c})
     end if
   end for
 end procedure
