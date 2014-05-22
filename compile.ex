@@ -778,20 +778,34 @@ function compile(sequence ast)
   return bc
 end function
 
+function get_c(atom instr)
+  integer c
+  c = and_bits(floor(instr / #1000000), #FF)
+  return c - 2 * and_bits(c, #80)
+end function
+
+function get_d(atom instr)
+  integer d
+  d = and_bits(floor(instr / #10000), #FFFF)
+  return d - 2 * and_bits(d, #8000)
+end function
 
 function branch_straighten(sequence bc)
   integer op, c, d
   for i = 1 to length(bc) do
     op = and_bits(bc[i], #FF)
     if op >= JL and op <= JNE then
-      c = and_bits(floor(bc[i] / #1000000), #FF)
-      c -= 2 * and_bits(c, #80)
+      c = get_c(bc[i])
       while and_bits(bc[i+1+c], #FF) = JMP do
-        d = and_bits(floor(bc[i+1+c] / #10000), #FFFF)
-        d -= 2 * and_bits(d, #8000)
-        c += d + 1
+        c += get_d(bc[i+1+c]) + 1
       end while
       bc[i] = and_bits(bc[i], #FFFFFF) + and_bits(c, #FF) * #1000000
+    elsif op = JMP then
+      d = get_d(bc[i])
+      while and_bits(bc[i+1+d], #FF) = JMP do
+        d += get_d(bc[i+1+d]) + 1
+      end while
+      bc[i] = asm2(JMP, 0, d)
     end if
   end for
   return bc
