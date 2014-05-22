@@ -450,7 +450,7 @@ function parse(integer mode)
         error("expected statement")
       end if
     end if
-    --? s
+
     if length(s) then
       ast = append(ast, s)
     end if
@@ -460,10 +460,6 @@ end function
 
 
 
-sequence regs
-regs = repeat(0, 255)
--- regs 0 is reserved for zero
-
 function asm(integer op, integer a, integer b, integer c)
   return op + a * #100 + b * #10000 + c * #1000000
 end function
@@ -471,6 +467,12 @@ end function
 function asm2(integer op, integer a, integer d)
   return op + a * #100 + d * #10000
 end function
+
+
+
+sequence regs
+regs = repeat(0, 255)
+-- regs 0 is reserved for zero
 
 procedure show_regs()
   for i = 1 to length(regs) do
@@ -772,9 +774,30 @@ function compile(sequence ast)
     end if
 
   end for
-  
+
   return bc
 end function
+
+
+function branch_straighten(sequence bc)
+  integer op, c, d
+  for i = 1 to length(bc) do
+    op = and_bits(bc[i], #FF)
+    if op >= JL and op <= JNE then
+      c = and_bits(floor(bc[i] / #1000000), #FF)
+      c -= 2 * and_bits(c, #80)
+      while and_bits(bc[i+1+c], #FF) = JMP do
+        d = and_bits(floor(bc[i+1+c] / #10000), #FFFF)
+        d -= 2 * and_bits(d, #8000)
+        c += d + 1
+      end while
+      bc[i] = and_bits(bc[i], #FFFFFF) + and_bits(c, #FF) * #1000000
+    end if
+  end for
+  return bc
+end function
+
+
 
 procedure disasm(sequence bc)
   integer op, a, b, c, d, sc, sd
@@ -846,4 +869,6 @@ procedure disasm(sequence bc)
   end for
 end procedure
 
-disasm(compile(parse(GLOBAL)) & asm(END,0,0,0))
+
+
+disasm(branch_straighten(compile(parse(GLOBAL)) & asm(END,0,0,0)))
