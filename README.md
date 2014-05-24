@@ -63,7 +63,7 @@ The operands are listed in `opcodes.e`.  The general operation for instructions
 is `reg[A] = reg[B] op reg[C]` or `jump by C if reg[A] op reg[B]`.  Loads and 
 unconditional jumps use a 16-bit sign-extended `D` value in the place of `B` 
 and `C`.  All jumps are relative number of instructions (not bytes) 
-using sign-extended C or D.  The virtual machine has 256 registers, with 
+using sign-extended `C` or `D`.  The virtual machine has 256 registers, with 
 `reg[0]` set to constant zero.
 
 The interpreter uses a jump table for fast decoding of opcode handler addresses.
@@ -75,7 +75,8 @@ register is then shifted arithmetic right `sar` 16 bits to give D, or then
 can use `movzx` twice to get of B and C from the `L` and `H` registers.
 
 GCC seems to generate an extra branch for each operand handler due to 
-common subexpression elimination, but this doesn't seem to hurt performance.
+common subexpression elimination, but can be changed with gcc option 
+`-fno-gcse -fno-crossjumping`.
 LLVM generates one branch to the next opcode at the end of each opcode handler.
 
 Limitations
