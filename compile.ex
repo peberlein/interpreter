@@ -778,6 +778,14 @@ function compile(sequence ast)
   return bc
 end function
 
+function get_a(atom instr)
+    return and_bits(floor(instr / #100), #FF)
+end function
+
+function get_b(atom instr)
+    return and_bits(floor(instr / #10000), #FF)
+end function
+
 function get_c(atom instr)
   integer c
   c = and_bits(floor(instr / #1000000), #FF)
@@ -790,8 +798,13 @@ function get_d(atom instr)
   return d - 2 * and_bits(d, #8000)
 end function
 
+
+-- cycle through jxx instructions to help branch prediction
+sequence jcount
+jcount = {0, 0, 0, 0}
+
 function branch_straighten(sequence bc)
-  integer op, c, d
+  integer op, c, d, j
   for i = 1 to length(bc) do
     op = and_bits(bc[i], #FF)
     if op >= JL and op <= JNE then
@@ -799,7 +812,12 @@ function branch_straighten(sequence bc)
       while and_bits(bc[i+1+c], #FF) = JMP do
         c += get_d(bc[i+1+c]) + 1
       end while
-      bc[i] = and_bits(bc[i], #FFFFFF) + and_bits(c, #FF) * #1000000
+
+      j = floor((op-JL)/8)+1
+      op += and_bits(7,jcount[j])
+      jcount[j] += 1
+      bc[i] = asm(op, get_a(bc[i]), get_b(bc[i]), c)
+
     elsif op = JMP then
       d = get_d(bc[i])
       while and_bits(bc[i+1+d], #FF) = JMP do
@@ -841,13 +859,13 @@ procedure disasm(sequence bc)
       printf(1, "div    r%d, r%d, r%d\n", {a, b, c})
     elsif op = REM then
       printf(1, "rem    r%d, r%d, r%d\n", {a, b, c})
-    elsif op = JL then
+    elsif op >= JL and op <= JL_7 then
       printf(1, "jl     r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
-    elsif op = JLE then
+    elsif op >= JLE and op <= JLE7 then
       printf(1, "jle    r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
-    elsif op = JE then
+    elsif op >= JE and op <= JE_7 then
       printf(1, "je     r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
-    elsif op = JNE then
+    elsif op >= JNE and op <= JNE7 then
       printf(1, "jne    r%d, r%d, %d (%d)\n", {a, b, sc, sc+i})
     elsif op = JMP then
       printf(1, "jmp    %d (%d)\n", {sd, sd+i})
@@ -885,4 +903,4 @@ end procedure
 
 
 
-disasm(branch_straighten(compile(parse(GLOBAL)) & asm(END,0,0,0)))
+disasm(branch_straighten(compile(parse(GLOBAL)) & asm2(END,0,OP_VER)))
